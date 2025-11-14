@@ -1,0 +1,20 @@
+const EXPECTED: u64 = 45;
+
+fn sum_below(limit: u64) -> u64 {
+    var index: u64 = 0;
+    var total: u64 = 0;
+
+    while index < limit {
+        total = total + index;
+        index = index + 1;
+    }
+
+    return total;
+}
+
+pub fn main() -> i32 {
+    if sum_below(10) == EXPECTED {
+        return 0;
+    }
+    return 1;
+}

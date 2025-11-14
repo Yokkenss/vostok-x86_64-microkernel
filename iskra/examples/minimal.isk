@@ -1,0 +1,13 @@
+fn add(left: u64, right: u64) -> u64 {
+    return left + right;
+}
+
+pub fn main() -> i32 {
+    let result: u64 = add(20, 22);
+
+    if result == 42 {
+        return 0;
+    }
+
+    return 1;
+}

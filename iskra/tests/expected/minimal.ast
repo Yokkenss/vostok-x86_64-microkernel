@@ -1,0 +1,49 @@
+(program
+  (fn add
+    (parameters
+      (parameter left
+        (type u64)
+      )
+      (parameter right
+        (type u64)
+      )
+    )
+    (type u64)
+    (block
+      (return
+        (binary +
+          (name left)
+          (name right)
+        )
+      )
+    )
+  )
+  (fn main public
+    (parameters)
+    (type i32)
+    (block
+      (let result
+        (type u64)
+        (call
+          (name add)
+          (integer 20)
+          (integer 22)
+        )
+      )
+      (if
+        (binary ==
+          (name result)
+          (integer 42)
+        )
+        (block
+          (return
+            (integer 0)
+          )
+        )
+      )
+      (return
+        (integer 1)
+      )
+    )
+  )
+)

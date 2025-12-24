@@ -1,0 +1,76 @@
+#include "semantic.h"
+#include "diagnostic.h"
+#include "token.h"
+#include <stdbool.h>
+#include <stddef.h>
+
+enum { FUNCTION_LIMIT=128, PARAMETER_LIMIT=6, LOCAL_LIMIT=256,
+       CONSTANT_LIMIT=128, STRUCT_LIMIT=128 };
+enum type_kind { TYPE_ERROR,TYPE_VOID,TYPE_BOOL,TYPE_U8,TYPE_U16,TYPE_U32,
+ TYPE_U64,TYPE_I8,TYPE_I16,TYPE_I32,TYPE_I64,TYPE_USIZE,TYPE_ISIZE,
+ TYPE_INTEGER_LITERAL,TYPE_STRUCT,TYPE_POINTER,TYPE_NULL };
+struct checked_type { enum type_kind kind; const struct ast_node *node; };
+struct function_symbol { struct token name; struct checked_type parameters[PARAMETER_LIMIT]; size_t parameter_count; struct checked_type result; };
+struct constant_symbol { struct token name; struct checked_type type; };
+struct local_symbol { struct token name; struct checked_type type; size_t depth; bool mutable; };
+struct checker { const struct source *source; const struct ast_node *structures[STRUCT_LIMIT]; size_t structure_count; struct function_symbol functions[FUNCTION_LIMIT]; size_t function_count; struct constant_symbol constants[CONSTANT_LIMIT]; size_t constant_count; struct local_symbol locals[LOCAL_LIMIT]; size_t local_count,depth; struct checked_type return_type; bool failed; };
+
+static struct checked_type make_type(enum type_kind kind,const struct ast_node *node){return(struct checked_type){kind,node};}
+static bool token_equal(const struct checker *c,struct token a,struct token b){if(a.length!=b.length)return false;for(size_t i=0;i<a.length;++i)if(c->source->text[a.offset+i]!=c->source->text[b.offset+i])return false;return true;}
+static void error(struct checker *c,struct token t,const char *m){diagnostic_error(c->source,t.offset,t.length,t.line,t.column,"semantic","%s",m);c->failed=true;}
+static const struct ast_node *find_structure(const struct checker *c,struct token n){for(size_t i=0;i<c->structure_count;++i)if(token_equal(c,c->structures[i]->token,n))return c->structures[i];return NULL;}
+
+static struct checked_type parse_type(struct checker *c,const struct ast_node *n){
+ if(n->kind==AST_TYPE_POINTER){struct checked_type p=parse_type(c,n->children[0]);return p.kind==TYPE_ERROR?p:make_type(TYPE_POINTER,n);}
+ static const struct{const char *name;enum type_kind kind;} names[]={{"void",TYPE_VOID},{"bool",TYPE_BOOL},{"u8",TYPE_U8},{"u16",TYPE_U16},{"u32",TYPE_U32},{"u64",TYPE_U64},{"i8",TYPE_I8},{"i16",TYPE_I16},{"i32",TYPE_I32},{"i64",TYPE_I64},{"usize",TYPE_USIZE},{"isize",TYPE_ISIZE}};
+ for(size_t i=0;i<sizeof(names)/sizeof(names[0]);++i)if(token_has_text(c->source,n->token,names[i].name))return make_type(names[i].kind,n);
+ const struct ast_node *s=find_structure(c,n->token);if(s)return make_type(TYPE_STRUCT,s);error(c,n->token,"unknown type name");return make_type(TYPE_ERROR,n);
+}
+static struct checked_type check_expression(struct checker*,const struct ast_node*);
+static bool is_integer(struct checked_type t){return t.kind>=TYPE_U8&&t.kind<=TYPE_INTEGER_LITERAL;}
+static struct checked_type pointer_pointee(struct checker *c,struct checked_type p){
+ if(p.node->kind==AST_TYPE_POINTER)return parse_type(c,p.node->children[0]);
+ return check_expression(c,p.node->children[0]);
+}
+static bool same_type(struct checker *c,struct checked_type a,struct checked_type b){if(a.kind!=b.kind)return false;if(a.kind==TYPE_STRUCT)return a.node==b.node;if(a.kind==TYPE_POINTER){if(((a.node->flags^b.node->flags)&AST_FLAG_MUTABLE)!=0)return false;return same_type(c,pointer_pointee(c,a),pointer_pointee(c,b));}return true;}
+static bool compatible(struct checker *c,struct checked_type a,struct checked_type b){return same_type(c,a,b)||(b.kind==TYPE_INTEGER_LITERAL&&is_integer(a))||(b.kind==TYPE_NULL&&a.kind==TYPE_POINTER);}
+static const struct function_symbol *find_function(const struct checker *c,struct token n){for(size_t i=0;i<c->function_count;++i)if(token_equal(c,c->functions[i].name,n))return&c->functions[i];return NULL;}
+static const struct constant_symbol *find_constant(const struct checker *c,struct token n){for(size_t i=0;i<c->constant_count;++i)if(token_equal(c,c->constants[i].name,n))return&c->constants[i];return NULL;}
+static struct local_symbol *find_local(struct checker *c,struct token n){for(size_t i=c->local_count;i>0;--i)if(token_equal(c,c->locals[i-1].name,n))return&c->locals[i-1];return NULL;}
+static const struct ast_node *find_field(const struct checker *c,const struct ast_node *s,struct token n){for(size_t i=0;i<s->child_count;++i)if(token_equal(c,s->children[i]->token,n))return s->children[i];return NULL;}
+static struct checked_type check_call(struct checker*c,const struct ast_node*n){
+ if(n->child_count==0||n->children[0]->kind!=AST_NAME){error(c,n->token,"only direct function calls are supported");return make_type(TYPE_ERROR,n);}
+ const struct function_symbol*f=find_function(c,n->children[0]->token);if(!f){error(c,n->children[0]->token,"call to an unknown function");return make_type(TYPE_ERROR,n);}
+ if(n->child_count-1!=f->parameter_count){error(c,n->token,"function called with the wrong number of arguments");return f->result;}
+ for(size_t i=0;i<f->parameter_count;++i){
+  if(!compatible(c,f->parameters[i],check_expression(c,n->children[i+1])))
+   error(c,n->children[i+1]->token,"function argument has an incompatible type");
+ }
+ return f->result;
+}
+static struct checked_type check_expression(struct checker*c,const struct ast_node*n){switch(n->kind){
+ case AST_INTEGER:return make_type(TYPE_INTEGER_LITERAL,n);case AST_BOOLEAN:return make_type(TYPE_BOOL,n);case AST_NULL:return make_type(TYPE_NULL,n);
+ case AST_NAME:{struct local_symbol*l=find_local(c,n->token);if(l)return l->type;const struct constant_symbol*k=find_constant(c,n->token);if(k)return k->type;error(c,n->token,"use of an unknown name");return make_type(TYPE_ERROR,n);}
+ case AST_CALL:return check_call(c,n);
+ case AST_STRUCT_LITERAL:{const struct ast_node*s=find_structure(c,n->token);if(!s){error(c,n->token,"literal names an unknown structure");return make_type(TYPE_ERROR,n);}if(n->child_count!=s->child_count)error(c,n->token,"structure literal must initialize every field exactly once");for(size_t i=0;i<n->child_count;++i){const struct ast_node*init=n->children[i];const struct ast_node*f=find_field(c,s,init->token);if(!f)error(c,init->token,"unknown structure field");else if(!compatible(c,parse_type(c,f->children[0]),check_expression(c,init->children[0])))error(c,init->token,"field initializer has an incompatible type");for(size_t j=0;j<i;++j)if(token_equal(c,n->children[j]->token,init->token))error(c,init->token,"duplicate field initializer");}return make_type(TYPE_STRUCT,s);}
+ case AST_FIELD_ACCESS:{struct checked_type b=check_expression(c,n->children[0]);if(b.kind!=TYPE_STRUCT){error(c,n->token,"field access requires a structure value");return make_type(TYPE_ERROR,n);}const struct ast_node*f=find_field(c,b.node,n->token);if(!f){error(c,n->token,"unknown structure field");return make_type(TYPE_ERROR,n);}return parse_type(c,f->children[0]);}
+ case AST_CAST:{struct checked_type a=check_expression(c,n->children[0]),b=parse_type(c,n->children[1]);if(!is_integer(a)||!is_integer(b))error(c,n->token,"only integer-to-integer casts are supported");return b;}
+ case AST_UNARY:{struct checked_type a=check_expression(c,n->children[0]);if(n->token.kind==TOKEN_AMP){if(n->children[0]->kind!=AST_NAME&&n->children[0]->kind!=AST_FIELD_ACCESS)error(c,n->token,"address-of requires an addressable value");if((n->flags&AST_FLAG_MUTABLE)&&n->children[0]->kind==AST_NAME){struct local_symbol*l=find_local(c,n->children[0]->token);if(!l||!l->mutable)error(c,n->token,"mutable address requires a mutable binding");}return make_type(TYPE_POINTER,n);}if(n->token.kind==TOKEN_STAR){if(a.kind!=TYPE_POINTER){error(c,n->token,"dereference requires a pointer");return make_type(TYPE_ERROR,n);}return pointer_pointee(c,a);}if(n->token.kind==TOKEN_BANG){if(a.kind!=TYPE_BOOL)error(c,n->token,"logical negation requires bool");return make_type(TYPE_BOOL,n);}if((n->token.kind==TOKEN_MINUS||n->token.kind==TOKEN_TILDE)&&is_integer(a))return a;error(c,n->token,"unsupported operand type for unary operator");return make_type(TYPE_ERROR,n);}
+ case AST_BINARY:{struct checked_type a=check_expression(c,n->children[0]),b=check_expression(c,n->children[1]);if(n->token.kind==TOKEN_AMP_AMP||n->token.kind==TOKEN_PIPE_PIPE){if(a.kind!=TYPE_BOOL||b.kind!=TYPE_BOOL)error(c,n->token,"logical operators require bool operands");return make_type(TYPE_BOOL,n);}struct checked_type common=a;if(a.kind==TYPE_INTEGER_LITERAL&&is_integer(b))common=b;else if(b.kind==TYPE_INTEGER_LITERAL&&is_integer(a))common=a;else if(!same_type(c,a,b)||!is_integer(a)){error(c,n->token,"binary operands have incompatible types");return make_type(TYPE_ERROR,n);}if(n->token.kind>=TOKEN_EQUAL_EQUAL&&n->token.kind<=TOKEN_GREATER_EQUAL)return make_type(TYPE_BOOL,n);return common;}
+ default:error(c,n->token,"expression is not supported by semantic analysis");return make_type(TYPE_ERROR,n);}}
+
+static bool check_block(struct checker*,const struct ast_node*);
+static struct checked_type assignment_target(struct checker*c,const struct ast_node*n){if(n->kind==AST_NAME){struct local_symbol*l=find_local(c,n->token);if(!l){error(c,n->token,"assignment target is not a local binding");return make_type(TYPE_ERROR,n);}if(!l->mutable)error(c,n->token,"cannot assign to an immutable binding");return l->type;}if(n->kind==AST_FIELD_ACCESS)return check_expression(c,n);if(n->kind==AST_UNARY&&n->token.kind==TOKEN_STAR){struct checked_type p=check_expression(c,n->children[0]);if(p.kind==TYPE_POINTER&&!(p.node->flags&AST_FLAG_MUTABLE))error(c,n->token,"cannot assign through a const pointer");return check_expression(c,n);}error(c,n->token,"assignment target is not addressable");return make_type(TYPE_ERROR,n);}
+static bool check_statement(struct checker*c,const struct ast_node*s){switch(s->kind){
+ case AST_LET_DECL:case AST_VAR_DECL:{if(c->local_count==LOCAL_LIMIT){error(c,s->token,"too many local bindings");return false;}for(size_t i=c->local_count;i>0;--i){if(c->locals[i-1].depth<c->depth)break;if(token_equal(c,c->locals[i-1].name,s->token)){error(c,s->token,"duplicate binding in the same block");return false;}}bool explicit=s->child_count==2;struct checked_type init=check_expression(c,s->children[explicit?1:0]);struct checked_type declared=explicit?parse_type(c,s->children[0]):init;if(declared.kind==TYPE_INTEGER_LITERAL)declared=make_type(TYPE_I64,s);if(declared.kind==TYPE_VOID||!compatible(c,declared,init))error(c,s->token,"initializer has an incompatible type");c->locals[c->local_count++]=(struct local_symbol){s->token,declared,c->depth,s->kind==AST_VAR_DECL};return false;}
+ case AST_ASSIGNMENT:{struct checked_type a=assignment_target(c,s->children[0]),b=check_expression(c,s->children[1]);if(!compatible(c,a,b))error(c,s->children[1]->token,"assigned value has an incompatible type");return false;}
+ case AST_RETURN:{struct checked_type v=s->child_count?check_expression(c,s->children[0]):make_type(TYPE_VOID,s);if(!compatible(c,c->return_type,v))error(c,s->token,"return value has an incompatible type");return true;}
+ case AST_IF:{if(check_expression(c,s->children[0]).kind!=TYPE_BOOL)error(c,s->children[0]->token,"if condition must have type bool");bool a=check_block(c,s->children[1]);bool b=s->child_count==3&&(s->children[2]->kind==AST_BLOCK?check_block(c,s->children[2]):check_statement(c,s->children[2]));return a&&b;}
+ case AST_WHILE:if(check_expression(c,s->children[0]).kind!=TYPE_BOOL)error(c,s->children[0]->token,"while condition must have type bool");(void)check_block(c,s->children[1]);return false;
+ case AST_EXPRESSION_STATEMENT:(void)check_expression(c,s->children[0]);return false;default:error(c,s->token,"statement is not supported by semantic analysis");return false;}}
+static bool check_block(struct checker*c,const struct ast_node*b){size_t locals=c->local_count;++c->depth;bool returns=false;for(size_t i=0;i<b->child_count;++i)if(check_statement(c,b->children[i]))returns=true;c->local_count=locals;--c->depth;return returns;}
+
+static void collect_structures(struct checker*c,const struct ast_node*p){for(size_t i=0;i<p->child_count;++i){const struct ast_node*s=p->children[i];if(s->kind!=AST_STRUCT_DECL)continue;if(c->structure_count==STRUCT_LIMIT){error(c,s->token,"too many structures");continue;}if(find_structure(c,s->token)){error(c,s->token,"duplicate structure declaration");continue;}c->structures[c->structure_count++]=s;}for(size_t i=0;i<c->structure_count;++i){const struct ast_node*s=c->structures[i];for(size_t f=0;f<s->child_count;++f){(void)parse_type(c,s->children[f]->children[0]);for(size_t j=0;j<f;++j)if(token_equal(c,s->children[j]->token,s->children[f]->token))error(c,s->children[f]->token,"duplicate structure field");}}}
+static void collect_declarations(struct checker*c,const struct ast_node*p){for(size_t i=0;i<p->child_count;++i){const struct ast_node*n=p->children[i];if(n->kind==AST_FUNCTION_DECL){if(c->function_count==FUNCTION_LIMIT){error(c,n->token,"too many functions");continue;}if(find_function(c,n->token)){error(c,n->token,"duplicate function declaration");continue;}const struct ast_node*ps=n->children[0];if(ps->child_count>PARAMETER_LIMIT){error(c,n->token,"more than six parameters are not supported");continue;}struct function_symbol*f=&c->functions[c->function_count++];f->name=n->token;f->parameter_count=ps->child_count;for(size_t j=0;j<ps->child_count;++j)f->parameters[j]=parse_type(c,ps->children[j]->children[0]);f->result=parse_type(c,n->children[1]);}else if(n->kind==AST_CONST_DECL){if(c->constant_count==CONSTANT_LIMIT){error(c,n->token,"too many constants");continue;}c->constants[c->constant_count++]=(struct constant_symbol){n->token,parse_type(c,n->children[0])};}}}
+static void check_function(struct checker*c,const struct ast_node*n){if(n->flags&AST_FLAG_EXTERN)return;const struct function_symbol*f=find_function(c,n->token);c->local_count=0;c->depth=0;c->return_type=f->result;const struct ast_node*ps=n->children[0];for(size_t i=0;i<ps->child_count;++i)c->locals[c->local_count++]=(struct local_symbol){ps->children[i]->token,f->parameters[i],0,false};bool returns=check_block(c,n->children[2]);if(f->result.kind!=TYPE_VOID&&!returns)error(c,n->token,"non-void function does not return on every path");}
+bool semantic_check(const struct source*source,const struct ast_node*p){struct checker c={.source=source};collect_structures(&c,p);collect_declarations(&c,p);for(size_t i=0;i<p->child_count;++i){const struct ast_node*n=p->children[i];if(n->kind==AST_FUNCTION_DECL)check_function(&c,n);else if(n->kind==AST_CONST_DECL){struct checked_type a=parse_type(&c,n->children[0]),b=check_expression(&c,n->children[1]);if(!compatible(&c,a,b))error(&c,n->token,"constant value has an incompatible type");}}return!c.failed;}

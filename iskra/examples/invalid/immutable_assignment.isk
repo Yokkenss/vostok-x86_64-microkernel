@@ -1,0 +1,5 @@
+pub fn main() -> i32 {
+    let answer: i32 = 42;
+    answer = 43;
+    return answer;
+}

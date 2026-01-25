@@ -1,0 +1,18 @@
+struct Header {
+    kind: u8,
+    length: u32,
+}
+
+fn update(header: *mut Header) -> void {
+    (*header).kind = 7 as u8;
+    (*header).length = 1000 as u32;
+}
+
+pub fn main() -> i32 {
+    var header: Header = Header { kind: 1, length: 2 };
+    update(&mut header);
+    if header.kind == 7 && header.length == 1000 {
+        return 0;
+    }
+    return 1;
+}

@@ -1,0 +1,5 @@
+pub fn main() -> i32 {
+    let value: u64 = 1;
+    let impossible: u64 = value << 64;
+    return impossible as i32;
+}

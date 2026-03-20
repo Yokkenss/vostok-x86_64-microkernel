@@ -1,0 +1,30 @@
+const ERROR_RIGHTS: i64 = 3;
+const ERROR_TYPE: i64 = 2;
+const RIGHT_SEND: u64 = 1;
+
+extern fn vostok_ipc_send(endpoint: u64, word: u64, capability: u64,
+                          rights: u64) -> i64;
+struct Message {
+    word: i64,
+    capability: u64,
+}
+extern fn vostok_ipc_receive(endpoint: u64, out: *mut Message) -> i64;
+extern fn vostok_uart_putc(device: u64, character: u64) -> i64;
+
+pub fn main(send_capability: u64,
+            transferable_capability: u64) -> i32 {
+    if vostok_uart_putc(send_capability, 33) != -ERROR_TYPE {
+        return 1;
+    }
+    var rejected_message: Message = Message { word: 0, capability: 0 };
+    let rejected: i64 = vostok_ipc_receive(send_capability,
+                                            &mut rejected_message);
+    if rejected != -ERROR_RIGHTS {
+        return 2;
+    }
+    if vostok_ipc_send(send_capability, 42, transferable_capability,
+                       RIGHT_SEND) != 0 {
+        return 3;
+    }
+    return 0;
+}

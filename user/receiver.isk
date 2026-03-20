@@ -1,0 +1,28 @@
+extern fn vostok_ipc_send(endpoint: u64, word: u64, capability: u64,
+                          rights: u64) -> i64;
+struct Message {
+    word: i64,
+    capability: u64,
+}
+extern fn vostok_ipc_receive(endpoint: u64, out: *mut Message) -> i64;
+extern fn vostok_cap_close(capability: u64) -> i64;
+
+pub fn main(receive_capability: u64, unused: u64) -> i32 {
+    var message: Message = Message { word: 0, capability: 0 };
+    if vostok_ipc_receive(receive_capability, &mut message) != 0 {
+        return 1;
+    }
+    if message.word != 42 {
+        return 2;
+    }
+    if message.capability == 0 {
+        return 3;
+    }
+    if vostok_ipc_send(message.capability, 99, 0, 0) != 0 {
+        return 4;
+    }
+    if vostok_cap_close(message.capability) != 0 {
+        return 5;
+    }
+    return 0;
+}

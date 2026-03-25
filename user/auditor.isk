@@ -1,0 +1,19 @@
+struct Message {
+    word: i64,
+    capability: u64,
+}
+extern fn vostok_ipc_receive(endpoint: u64, out: *mut Message) -> i64;
+
+pub fn main(receive_capability: u64, unused: u64) -> i32 {
+    var message: Message = Message { word: 0, capability: 0 };
+    if vostok_ipc_receive(receive_capability, &mut message) != 0 {
+        return 1;
+    }
+    if message.word != 99 {
+        return 2;
+    }
+    if message.capability != 0 {
+        return 3;
+    }
+    return 0;
+}

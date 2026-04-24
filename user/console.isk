@@ -1,0 +1,40 @@
+struct Message {
+    word: i64,
+    capability: u64,
+}
+
+extern fn vostok_ipc_send(endpoint: u64, word: u64, capability: u64,
+                          rights: u64) -> i64;
+extern fn vostok_ipc_receive(endpoint: u64, out: *mut Message) -> i64;
+extern fn vostok_uart_putc(device: u64, character: u64) -> i64;
+extern fn vostok_uart_getc(device: u64) -> i64;
+
+pub fn main(endpoint: u64, device: u64) -> i32 {
+    var message: Message = Message { word: 0, capability: 0 };
+    while true {
+        if vostok_ipc_receive(endpoint, &mut message) != 0 {
+            return 1;
+        }
+        if message.word == 1 {
+            let character: i64 = vostok_uart_getc(device);
+            if character < 0 {
+                return 2;
+            }
+            if vostok_ipc_send(endpoint, character as u64, 0, 0) != 0 {
+                return 3;
+            }
+        } else if message.word == 2 {
+            return 0;
+        } else if message.word >= 256 && message.word <= 383 {
+            if vostok_uart_putc(device, (message.word - 256) as u64) != 0 {
+                return 4;
+            }
+            if vostok_ipc_send(endpoint, 0, 0, 0) != 0 {
+                return 5;
+            }
+        } else {
+            return 6;
+        }
+    }
+    return 7;
+}

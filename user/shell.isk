@@ -1,0 +1,98 @@
+extern fn vostok_console_putc(character: u64) -> i64;
+extern fn vostok_console_getc() -> i64;
+extern fn vostok_process_dump() -> i64;
+extern fn vostok_metrics_dump() -> i64;
+extern fn vostok_demo_ready() -> i64;
+extern fn vostok_console_stop() -> i64;
+
+fn put(character: u64) -> void {
+    vostok_console_putc(character);
+}
+
+fn newline() -> void {
+    put(10);
+}
+
+fn prompt() -> void {
+    put(118); put(111); put(115); put(116); put(111); put(107); put(62); put(32);
+}
+
+fn banner() -> void {
+    newline();
+    put(86); put(111); put(115); put(116); put(111); put(107); put(32);
+    put(48); put(46); put(50); newline();
+    put(84); put(121); put(112); put(101); put(32); put(104); put(101); put(108);
+    put(112); put(32); put(102); put(111); put(114); put(32); put(99); put(111);
+    put(109); put(109); put(97); put(110); put(100); put(115); put(46); newline();
+}
+
+fn help() -> void {
+    put(104); put(101); put(108); put(112); put(32); put(32); put(32); put(32);
+    put(115); put(104); put(111); put(119); put(32); put(99); put(111); put(109);
+    put(109); put(97); put(110); put(100); put(115); newline();
+    put(112); put(115); put(32); put(32); put(32); put(32); put(32); put(32);
+    put(115); put(104); put(111); put(119); put(32); put(112); put(114); put(111);
+    put(99); put(101); put(115); put(115); put(101); put(115); newline();
+    put(104); put(101); put(108); put(108); put(111); put(32); put(32); put(32);
+    put(117); put(115); put(101); put(114); put(115); put(112); put(97); put(99);
+    put(101); put(32); put(73); put(115); put(107); put(114); put(97); newline();
+    put(109); put(101); put(116); put(114); put(105); put(99); put(115); put(32);
+    put(115); put(104); put(111); put(119); put(32); put(107); put(101); put(114);
+    put(110); put(101); put(108); put(32); put(109); put(101); put(116); put(114);
+    put(105); put(99); put(115); newline();
+    put(115); put(104); put(117); put(116); put(100); put(111); put(119); put(110);
+    put(32); put(101); put(120); put(105); put(116); put(32); put(86); put(111);
+    put(115); put(116); put(111); put(107); newline();
+}
+
+fn hello() -> void {
+    put(72); put(101); put(108); put(108); put(111); put(32); put(102); put(114);
+    put(111); put(109); put(32); put(73); put(115); put(107); put(114); put(97);
+    put(32); put(117); put(115); put(101); put(114); put(115); put(112); put(97);
+    put(99); put(101); put(46); newline();
+}
+
+fn unknown() -> void {
+    put(117); put(110); put(107); put(110); put(111); put(119); put(110); put(32);
+    put(99); put(111); put(109); put(109); put(97); put(110); put(100); newline();
+}
+
+pub fn main(console: u64, unused: u64) -> i32 {
+    while vostok_demo_ready() == 0 {
+    }
+    banner();
+    prompt();
+    var hash: u64 = 0;
+    var length: u64 = 0;
+    while true {
+        let input: i64 = vostok_console_getc();
+        if input >= 0 {
+            let character: u64 = input as u64;
+            if character == 13 || character == 10 {
+                newline();
+                if length == 4 && hash == 235548985 {
+                    help();
+                } else if length == 2 && hash == 14787 {
+                    vostok_process_dump();
+                } else if length == 5 && hash == 30856916622 {
+                    hello();
+                } else if length == 7 && hash == 554807481269579 {
+                    vostok_metrics_dump();
+                } else if length == 8 && hash == 76667356674608162 {
+                    vostok_console_stop();
+                    return 0;
+                } else if length != 0 {
+                    unknown();
+                }
+                hash = 0;
+                length = 0;
+                prompt();
+            } else if character >= 32 && character <= 126 {
+                put(character);
+                hash = hash * 131 + character;
+                length = length + 1;
+            }
+        }
+    }
+    return 1;
+}

@@ -9,13 +9,15 @@
 #include <stdint.h>
 
 enum {
-    PROCESS_LIMIT = 8,
+    PROCESS_LIMIT = 16,
     CAPABILITY_LIMIT = 16,
     OWNED_PAGE_LIMIT = 128,
     KERNEL_STACK_SIZE = 16384,
     USER_STACK_PAGES = 4,
     CAPABILITY_TYPE_ENDPOINT = 1,
     CAPABILITY_TYPE_CONSOLE = 2,
+    CAPABILITY_TYPE_FILESYSTEM = 3,
+    CAPABILITY_TYPE_PROCESS = 4,
 };
 
 enum process_state {
@@ -25,6 +27,7 @@ enum process_state {
     PROCESS_BLOCKED_SEND,
     PROCESS_BLOCKED_RECEIVE,
     PROCESS_BLOCKED_CONSOLE,
+    PROCESS_BLOCKED_WAIT,
     PROCESS_DEAD,
 };
 
@@ -45,6 +48,7 @@ struct owned_page {
 struct process {
     uint32_t pid;
     const char *name;
+    char name_storage[32];
     enum process_state state;
     struct address_space address_space;
     struct exception_frame *frame;
@@ -54,6 +58,7 @@ struct process {
     int exit_code;
     bool expected_fault;
     bool faulted;
+    uint32_t waiting_pid;
     uint8_t kernel_stack[KERNEL_STACK_SIZE] __attribute__((aligned(16)));
 };
 

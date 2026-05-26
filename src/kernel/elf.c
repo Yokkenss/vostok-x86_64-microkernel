@@ -87,8 +87,16 @@ static physical_address_t owned_physical_at(const struct process *process,
 bool user_image_load_elf(struct process *process,
                          const struct limine_file *module, uint64_t *entry)
 {
-    if (module == NULL || module->size < sizeof(struct elf_header)) return false;
-    const uint8_t *image = module->address;
+    if (module == NULL) return false;
+    return user_image_load_elf_bytes(process, module->address,
+                                     (size_t)module->size, entry);
+}
+
+bool user_image_load_elf_bytes(struct process *process, const void *bytes,
+                               size_t image_size, uint64_t *entry)
+{
+    if (bytes == NULL || image_size < sizeof(struct elf_header)) return false;
+    const uint8_t *image = bytes;
     const struct elf_header *header = (const void *)image;
     if (header->identity[0] != 0x7f || header->identity[1] != 'E'
         || header->identity[2] != 'L' || header->identity[3] != 'F'
@@ -100,8 +108,8 @@ bool user_image_load_elf(struct process *process,
     }
     const uint64_t table_size = (uint64_t)header->program_header_count
                               * sizeof(struct elf_program_header);
-    if (header->program_header_offset > module->size
-        || table_size > module->size - header->program_header_offset) {
+    if (header->program_header_offset > image_size
+        || table_size > image_size - header->program_header_offset) {
         return false;
     }
     const struct elf_program_header *headers =
@@ -112,8 +120,8 @@ bool user_image_load_elf(struct process *process,
         uint64_t memory_end;
         uint64_t file_end;
         if (segment->file_size > segment->memory_size
-            || segment->offset > module->size
-            || segment->file_size > module->size - segment->offset
+            || segment->offset > image_size
+            || segment->file_size > image_size - segment->offset
             || !checked_add(segment->virtual_address, segment->memory_size,
                             &memory_end)
             || !checked_add(segment->virtual_address, segment->file_size,

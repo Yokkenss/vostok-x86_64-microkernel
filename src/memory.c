@@ -20,3 +20,13 @@ void *memset(void *destination, int value, size_t count)
     }
     return destination;
 }
+
+int memcmp(const void *left, const void *right, size_t count)
+{
+    const unsigned char *a = left;
+    const unsigned char *b = right;
+    for (size_t index = 0; index < count; ++index) {
+        if (a[index] != b[index]) return (int)a[index] - (int)b[index];
+    }
+    return 0;
+}

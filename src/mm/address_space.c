@@ -151,6 +151,16 @@ bool address_space_is_mapped(const struct address_space *space,
     return leaf != NULL && (*leaf & PAGE_PRESENT) != 0;
 }
 
+bool address_space_user_accessible(const struct address_space *space,
+                                   uint64_t virtual_address, bool writable)
+{
+    struct address_space mutable_space = *space;
+    uint64_t *leaf = walk_to_leaf(&mutable_space, virtual_address, false, 0);
+    if (leaf == NULL || (*leaf & (PAGE_PRESENT | PAGE_USER))
+                        != (PAGE_PRESENT | PAGE_USER)) return false;
+    return !writable || (*leaf & PAGE_WRITABLE) != 0;
+}
+
 void address_space_activate(const struct address_space *space)
 {
     ASSERT((space->root & (PAGE_SIZE - 1)) == 0);

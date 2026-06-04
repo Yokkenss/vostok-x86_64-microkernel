@@ -29,6 +29,8 @@ physical_address_t address_space_unmap(struct address_space *space,
                                        uint64_t virtual_address);
 bool address_space_is_mapped(const struct address_space *space,
                              uint64_t virtual_address);
+bool address_space_user_accessible(const struct address_space *space,
+                                   uint64_t virtual_address, bool writable);
 void address_space_activate(const struct address_space *space);
 void address_space_self_test(void);
 

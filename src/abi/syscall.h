@@ -13,6 +13,14 @@ enum vostok_syscall {
     VOSTOK_SYS_PROCESS_DUMP = 6,
     VOSTOK_SYS_METRICS_DUMP = 7,
     VOSTOK_SYS_DEMO_READY = 8,
+    VOSTOK_SYS_FS_WRITE = 9,
+    VOSTOK_SYS_FS_READ = 10,
+    VOSTOK_SYS_FS_LIST = 11,
+    VOSTOK_SYS_PROCESS_SPAWN = 12,
+    VOSTOK_SYS_INIT_START = 13,
+    VOSTOK_SYS_FS_READ_ID = 14,
+    VOSTOK_SYS_PROCESS_WAIT = 15,
+    VOSTOK_SYS_ISKRA_BUILD = 16,
 };
 
 enum vostok_capability_rights {
@@ -27,6 +35,16 @@ enum vostok_console_rights {
     VOSTOK_RIGHT_CONSOLE_INSPECT = 1u << 5,
 };
 
+enum vostok_filesystem_rights {
+    VOSTOK_RIGHT_FS_READ = 1u << 0,
+    VOSTOK_RIGHT_FS_WRITE = 1u << 1,
+};
+
+enum vostok_process_rights {
+    VOSTOK_RIGHT_PROCESS_SPAWN = 1u << 0,
+    VOSTOK_RIGHT_PROCESS_INIT = 1u << 1,
+};
+
 enum vostok_result {
     VOSTOK_OK = 0,
     VOSTOK_ERROR_INVALID = -1,
@@ -34,6 +52,7 @@ enum vostok_result {
     VOSTOK_ERROR_RIGHTS = -3,
     VOSTOK_ERROR_NO_SPACE = -4,
     VOSTOK_ERROR_BUSY = -5,
+    VOSTOK_ERROR_NOT_FOUND = -6,
 };
 
 #endif

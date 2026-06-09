@@ -1,5 +1,6 @@
 #include "boot/limine_requests.h"
 #include "kernel/process.h"
+#include "kernel/ramfs.h"
 #include "mm/address_space.h"
 #include "mm/physical.h"
 #include "panic.h"
@@ -29,6 +30,7 @@ void kernel_main(void)
              (unsigned long)stats.free_pages,
              (unsigned long)stats.metadata_pages);
     address_space_self_test();
+    ramfs_initialize();
     log_info("diagnostics ready");
     timer_init(100000);
     serial_irq_init();

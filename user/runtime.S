@@ -127,6 +127,65 @@ vostok_demo_ready:
     int $0x80
     ret
 
+.global vostok_fs_write
+.type vostok_fs_write, @function
+vostok_fs_write:
+    movq %rcx, %r10
+    movq $9, %rax
+    int $0x80
+    ret
+
+.global vostok_fs_read
+.type vostok_fs_read, @function
+vostok_fs_read:
+    movq %rcx, %r10
+    movq $10, %rax
+    int $0x80
+    ret
+
+.global vostok_fs_list
+.type vostok_fs_list, @function
+vostok_fs_list:
+    movq $11, %rax
+    int $0x80
+    ret
+
+.global vostok_process_spawn
+.type vostok_process_spawn, @function
+vostok_process_spawn:
+    movq $12, %rax
+    int $0x80
+    ret
+
+.global vostok_init_start
+.type vostok_init_start, @function
+vostok_init_start:
+    movq $13, %rax
+    int $0x80
+    ret
+
+.global vostok_fs_read_id
+.type vostok_fs_read_id, @function
+vostok_fs_read_id:
+    movq %rcx, %r10
+    movq $14, %rax
+    int $0x80
+    ret
+
+.global vostok_process_wait
+.type vostok_process_wait, @function
+vostok_process_wait:
+    movq $15, %rax
+    int $0x80
+    ret
+
+.global vostok_iskra_build
+.type vostok_iskra_build, @function
+vostok_iskra_build:
+    movq $16, %rax
+    int $0x80
+    ret
+
 .section .bss
 .align 8
 vostok_bootstrap_capability:

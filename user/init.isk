@@ -1,0 +1,16 @@
+extern fn vostok_fs_write(filesystem: u64, path: *const u8,
+                          path_length: u64, data: *const u8,
+                          length: u64) -> i64;
+extern fn vostok_init_start(process: u64) -> i64;
+
+pub fn main(process: u64, filesystem: u64) -> i32 {
+    let path: *const u8 = "/home/main.isk";
+    let source: *const u8 = "fn main() -> i32 { print(\"Hello from an Iskra file!\\n\"); return 0; }\n";
+    if vostok_fs_write(filesystem, path, 14, source, 68) < 0 {
+        return 1;
+    }
+    if vostok_init_start(process) != 0 {
+        return 2;
+    }
+    return 0;
+}

@@ -1,0 +1,14 @@
+extern fn vostok_console_putc(character: u64) -> i64;
+
+fn puts(text: *const u8, length: u64) -> void {
+    var index: u64 = 0;
+    while index < length {
+        vostok_console_putc(text[index] as u64);
+        index = index + 1;
+    }
+}
+
+pub fn main(console: u64, filesystem: u64) -> i32 {
+    puts("Hello from dynamically loaded ELF.\n", 35);
+    return 0;
+}

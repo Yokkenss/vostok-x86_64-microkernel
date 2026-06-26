@@ -1,0 +1,40 @@
+extern fn vostok_console_putc(character: u64) -> i64;
+extern fn vostok_fs_read_id(filesystem: u64, id: u64, output: *mut u8,
+                            capacity: u64) -> i64;
+
+fn puts(text: *const u8, length: u64) -> void {
+    var index: u64 = 0;
+    while index < length {
+        vostok_console_putc(text[index] as u64);
+        index = index + 1;
+    }
+}
+
+pub fn main(console: u64, filesystem: u64, file_id: u64) -> i32 {
+    var source: [u8; 4096] = [0; 4096];
+    let count: i64 = vostok_fs_read_id(filesystem, file_id,
+                                       &mut source[0], 4096);
+    if count < 0 {
+        puts("iskra: cannot read source\n", 26);
+        return 1;
+    }
+    puts("iskra: running source\n", 22);
+    var index: u64 = 0;
+    var in_string: bool = false;
+    while index < count as u64 {
+        let character: u8 = source[index];
+        if character == 34 {
+            in_string = !in_string;
+        } else if in_string {
+            if character == 92 && index + 1 < count as u64
+                && source[index + 1] == 110 {
+                vostok_console_putc(10);
+                index = index + 1;
+            } else {
+                vostok_console_putc(character as u64);
+            }
+        }
+        index = index + 1;
+    }
+    return 0;
+}

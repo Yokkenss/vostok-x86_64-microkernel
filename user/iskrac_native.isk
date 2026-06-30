@@ -1,0 +1,143 @@
+extern fn vostok_console_putc(character: u64) -> i64;
+extern fn vostok_fs_read_id(filesystem: u64, id: u64, output: *mut u8,
+                            capacity: u64) -> i64;
+extern fn vostok_fs_write(filesystem: u64, path: *const u8,
+                          path_length: u64, data: *const u8,
+                          length: u64) -> i64;
+
+fn puts(text: *const u8) -> void {
+    var index: u64 = 0;
+    while text[index] != 0 {
+        vostok_console_putc(text[index] as u64);
+        index = index + 1;
+    }
+}
+
+fn set16(output: *mut u8, offset: u64, value: u64) -> void {
+    output[offset] = value as u8;
+    output[offset + 1] = (value >> 8) as u8;
+}
+
+fn set32(output: *mut u8, offset: u64, value: u64) -> void {
+    set16(output, offset, value);
+    set16(output, offset + 2, value >> 16);
+}
+
+fn set64(output: *mut u8, offset: u64, value: u64) -> void {
+    set32(output, offset, value);
+    set32(output, offset + 4, value >> 32);
+}
+
+fn byte(output: *mut u8, offset: u64, value: u64) -> u64 {
+    output[offset] = value as u8;
+    return offset + 1;
+}
+
+fn elf_header(output: *mut u8, file_size: u64) -> void {
+    output[0] = 127; output[1] = 69; output[2] = 76; output[3] = 70;
+    output[4] = 2; output[5] = 1; output[6] = 1;
+    set16(output, 16, 2);
+    set16(output, 18, 62);
+    set32(output, 20, 1);
+    set64(output, 24, 4194424);
+    set64(output, 32, 64);
+    set16(output, 52, 64);
+    set16(output, 54, 56);
+    set16(output, 56, 1);
+
+    set32(output, 64, 1);
+    set32(output, 68, 7);
+    set64(output, 72, 0);
+    set64(output, 80, 4194304);
+    set64(output, 96, file_size);
+    set64(output, 104, file_size);
+    set64(output, 112, 4096);
+}
+
+fn emit_code(output: *mut u8, message_length: u64) -> u64 {
+    var at: u64 = 120;
+    at = byte(output, at, 65); at = byte(output, at, 84);
+    at = byte(output, at, 73); at = byte(output, at, 137);
+    at = byte(output, at, 252);
+    at = byte(output, at, 72); at = byte(output, at, 141);
+    at = byte(output, at, 29); set32(output, at, 61); at = at + 4;
+    at = byte(output, at, 72); at = byte(output, at, 199);
+    at = byte(output, at, 193); set32(output, at, message_length); at = at + 4;
+
+    at = byte(output, at, 15); at = byte(output, at, 182);
+    at = byte(output, at, 51);
+    at = byte(output, at, 72); at = byte(output, at, 129);
+    at = byte(output, at, 198); set32(output, at, 256); at = at + 4;
+    at = byte(output, at, 76); at = byte(output, at, 137);
+    at = byte(output, at, 231);
+    at = byte(output, at, 49); at = byte(output, at, 210);
+    at = byte(output, at, 69); at = byte(output, at, 49);
+    at = byte(output, at, 210);
+    at = byte(output, at, 72); at = byte(output, at, 199);
+    at = byte(output, at, 192); set32(output, at, 1); at = at + 4;
+    at = byte(output, at, 205); at = byte(output, at, 128);
+    at = byte(output, at, 76); at = byte(output, at, 137);
+    at = byte(output, at, 231);
+    at = byte(output, at, 72); at = byte(output, at, 199);
+    at = byte(output, at, 192); set32(output, at, 2); at = at + 4;
+    at = byte(output, at, 205); at = byte(output, at, 128);
+    at = byte(output, at, 72); at = byte(output, at, 255);
+    at = byte(output, at, 195);
+    at = byte(output, at, 72); at = byte(output, at, 255);
+    at = byte(output, at, 201);
+    at = byte(output, at, 117); at = byte(output, at, 209);
+    at = byte(output, at, 49); at = byte(output, at, 255);
+    at = byte(output, at, 49); at = byte(output, at, 192);
+    at = byte(output, at, 205); at = byte(output, at, 128);
+    at = byte(output, at, 244);
+    return at;
+}
+
+pub fn main(console: u64, filesystem: u64, source_id: u64) -> i32 {
+    var source: [u8; 4096] = [0; 4096];
+    let source_size: i64 = vostok_fs_read_id(filesystem, source_id,
+                                             &mut source[0], 4096);
+    if source_size < 0 { puts("iskrac: read failed\n"); return 1; }
+
+    var cursor: u64 = 0;
+    while cursor < source_size as u64 && source[cursor] != 34 {
+        cursor = cursor + 1;
+    }
+    if cursor == source_size as u64 {
+        puts("iskrac: expected print string\n"); return 2;
+    }
+    cursor = cursor + 1;
+    var message: [u8; 512] = [0; 512];
+    var message_length: u64 = 0;
+    while cursor < source_size as u64 && source[cursor] != 34
+          && message_length < 512 {
+        if source[cursor] == 92 && cursor + 1 < source_size as u64 {
+            cursor = cursor + 1;
+            if source[cursor] == 110 { message[message_length] = 10; }
+            else if source[cursor] == 116 { message[message_length] = 9; }
+            else if source[cursor] == 114 { message[message_length] = 13; }
+            else { message[message_length] = source[cursor]; }
+        } else { message[message_length] = source[cursor]; }
+        message_length = message_length + 1;
+        cursor = cursor + 1;
+    }
+    if message_length == 0 || cursor == source_size as u64 {
+        puts("iskrac: invalid or empty string\n"); return 3;
+    }
+
+    var output: [u8; 4096] = [0; 4096];
+    let data_offset: u64 = emit_code(&mut output[0], message_length);
+    var index: u64 = 0;
+    while index < message_length {
+        output[data_offset + index] = message[index];
+        index = index + 1;
+    }
+    let file_size: u64 = data_offset + message_length;
+    elf_header(&mut output[0], file_size);
+    if vostok_fs_write(filesystem, "/home/a.out", 11, &output[0],
+                       file_size) < 0 {
+        puts("iskrac: write failed\n"); return 4;
+    }
+    puts("iskrac: native x86-64 ELF written to /home/a.out\n");
+    return 0;
+}

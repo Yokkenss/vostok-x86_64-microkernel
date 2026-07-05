@@ -4,94 +4,200 @@ extern fn vostok_process_dump() -> i64;
 extern fn vostok_metrics_dump() -> i64;
 extern fn vostok_demo_ready() -> i64;
 extern fn vostok_console_stop() -> i64;
+extern fn vostok_fs_write(filesystem: u64, path: *const u8,
+                          path_length: u64, data: *const u8,
+                          length: u64) -> i64;
+extern fn vostok_fs_read(filesystem: u64, path: *const u8,
+                         path_length: u64, data: *mut u8,
+                         capacity: u64) -> i64;
+extern fn vostok_fs_list(filesystem: u64, data: *mut u8,
+                         capacity: u64) -> i64;
+extern fn vostok_process_spawn(process: u64, name: *const u8,
+                               length: u64) -> i64;
+extern fn vostok_process_wait(process: u64, pid: u64) -> i64;
+extern fn vostok_iskra_build(process: u64, path: *const u8,
+                             length: u64) -> i64;
 
-fn put(character: u64) -> void {
-    vostok_console_putc(character);
+fn put(character: u64) -> void { vostok_console_putc(character); }
+
+fn puts(text: *const u8) -> void {
+    var index: u64 = 0;
+    while text[index] != 0 {
+        put(text[index] as u64);
+        index = index + 1;
+    }
 }
 
-fn newline() -> void {
-    put(10);
+fn newline() -> void { put(10); }
+fn prompt() -> void { puts("vostok> "); }
+
+fn equal(input: *const u8, length: u64, text: *const u8,
+         text_length: u64) -> bool {
+    if length != text_length { return false; }
+    var index: u64 = 0;
+    while index < length {
+        if input[index] != text[index] { return false; }
+        index = index + 1;
+    }
+    return true;
 }
 
-fn prompt() -> void {
-    put(118); put(111); put(115); put(116); put(111); put(107); put(62); put(32);
-}
-
-fn banner() -> void {
-    newline();
-    put(86); put(111); put(115); put(116); put(111); put(107); put(32);
-    put(48); put(46); put(50); newline();
-    put(84); put(121); put(112); put(101); put(32); put(104); put(101); put(108);
-    put(112); put(32); put(102); put(111); put(114); put(32); put(99); put(111);
-    put(109); put(109); put(97); put(110); put(100); put(115); put(46); newline();
+fn prefix(input: *const u8, length: u64, text: *const u8,
+          text_length: u64) -> bool {
+    if length < text_length { return false; }
+    var index: u64 = 0;
+    while index < text_length {
+        if input[index] != text[index] { return false; }
+        index = index + 1;
+    }
+    return true;
 }
 
 fn help() -> void {
-    put(104); put(101); put(108); put(112); put(32); put(32); put(32); put(32);
-    put(115); put(104); put(111); put(119); put(32); put(99); put(111); put(109);
-    put(109); put(97); put(110); put(100); put(115); newline();
-    put(112); put(115); put(32); put(32); put(32); put(32); put(32); put(32);
-    put(115); put(104); put(111); put(119); put(32); put(112); put(114); put(111);
-    put(99); put(101); put(115); put(115); put(101); put(115); newline();
-    put(104); put(101); put(108); put(108); put(111); put(32); put(32); put(32);
-    put(117); put(115); put(101); put(114); put(115); put(112); put(97); put(99);
-    put(101); put(32); put(73); put(115); put(107); put(114); put(97); newline();
-    put(109); put(101); put(116); put(114); put(105); put(99); put(115); put(32);
-    put(115); put(104); put(111); put(119); put(32); put(107); put(101); put(114);
-    put(110); put(101); put(108); put(32); put(109); put(101); put(116); put(114);
-    put(105); put(99); put(115); newline();
-    put(115); put(104); put(117); put(116); put(100); put(111); put(119); put(110);
-    put(32); put(101); put(120); put(105); put(116); put(32); put(86); put(111);
-    put(115); put(116); put(111); put(107); newline();
+    puts("help                 show commands\n");
+    puts("ps                   show processes\n");
+    puts("ls                   list bootfs and ramfs\n");
+    puts("cat PATH             print a file\n");
+    puts("edit PATH            replace a file; Ctrl-D saves\n");
+    puts("build PATH           compile Iskra to /home/a.out\n");
+    puts("run NAME|PATH.isk    load ELF or run Iskra source\n");
+    puts("metrics              show kernel metrics\n");
+    puts("shutdown             exit Vostok\n");
 }
 
-fn hello() -> void {
-    put(72); put(101); put(108); put(108); put(111); put(32); put(102); put(114);
-    put(111); put(109); put(32); put(73); put(115); put(107); put(114); put(97);
-    put(32); put(117); put(115); put(101); put(114); put(115); put(112); put(97);
-    put(99); put(101); put(46); newline();
-}
-
-fn unknown() -> void {
-    put(117); put(110); put(107); put(110); put(111); put(119); put(110); put(32);
-    put(99); put(111); put(109); put(109); put(97); put(110); put(100); newline();
-}
-
-pub fn main(console: u64, unused: u64) -> i32 {
-    while vostok_demo_ready() == 0 {
+fn list_files(filesystem: u64) -> void {
+    var data: [u8; 1024] = [0; 1024];
+    let count: i64 = vostok_fs_list(filesystem, &mut data[0], 1024);
+    if count < 0 { puts("ls: filesystem error\n"); return; }
+    var index: u64 = 0;
+    while index < count as u64 {
+        put(data[index] as u64);
+        index = index + 1;
     }
-    banner();
+}
+
+fn cat_file(filesystem: u64, path: *const u8, path_length: u64) -> void {
+    var data: [u8; 4096] = [0; 4096];
+    let count: i64 = vostok_fs_read(filesystem, path, path_length,
+                                    &mut data[0], 4096);
+    if count < 0 { puts("cat: file not found\n"); return; }
+    var index: u64 = 0;
+    while index < count as u64 {
+        put(data[index] as u64);
+        index = index + 1;
+    }
+    if count == 0 || data[(count - 1) as u64] != 10 { newline(); }
+}
+
+fn edit_file(filesystem: u64, path: *const u8, path_length: u64) -> void {
+    var data: [u8; 4096] = [0; 4096];
+    let old_count: i64 = vostok_fs_read(filesystem, path, path_length,
+                                        &mut data[0], 4096);
+    puts("--- current file ---\n");
+    if old_count >= 0 {
+        var old_index: u64 = 0;
+        while old_index < old_count as u64 {
+            put(data[old_index] as u64);
+            old_index = old_index + 1;
+        }
+    } else { puts("(new file)\n"); }
+    puts("--- type replacement; press Ctrl-D to save ---\n");
+    var length: u64 = 0;
+    var editing: bool = true;
+    while editing {
+        let input: i64 = vostok_console_getc();
+        if input == 4 {
+            editing = false;
+        } else if (input == 8 || input == 127) && length > 0 {
+            length = length - 1;
+            put(8); put(32); put(8);
+        } else if (input == 13 || input == 10) && length < 4096 {
+            data[length] = 10;
+            length = length + 1;
+            newline();
+        } else if input >= 32 && input <= 126 && length < 4096 {
+            data[length] = input as u8;
+            length = length + 1;
+            put(input as u64);
+        }
+    }
+    newline();
+    if vostok_fs_write(filesystem, path, path_length, &data[0], length) < 0 {
+        puts("edit: save failed\n");
+    } else { puts("saved\n"); }
+}
+
+fn run_program(process: u64, path: *const u8, path_length: u64) -> void {
+    puts("run: starting\n");
+    let pid: i64 = vostok_process_spawn(process, path, path_length);
+    if pid < 0 {
+        puts("run: program or source not found\n");
+        return;
+    }
+    let result: i64 = vostok_process_wait(process, pid as u64);
+    if result == 0 { puts("run: finished successfully\n"); }
+    else { puts("run: program failed\n"); }
+}
+
+fn build_program(process: u64, path: *const u8, path_length: u64) -> void {
+    puts("build: starting native compiler\n");
+    let pid: i64 = vostok_iskra_build(process, path, path_length);
+    if pid < 0 {
+        puts("build: source not found\n");
+        return;
+    }
+    let result: i64 = vostok_process_wait(process, pid as u64);
+    if result == 0 { puts("build: finished successfully\n"); }
+    else { puts("build: compiler failed\n"); }
+}
+
+pub fn main(console: u64, inspect: u64, process: u64,
+            filesystem: u64) -> i32 {
+    while vostok_demo_ready() == 0 {}
+    newline();
+    puts("Vostok 0.3\n");
+    puts("userspace init, bootfs, writable ramfs and dynamic run ready\n");
+    puts("Type help for commands.\n");
     prompt();
-    var hash: u64 = 0;
+    var command: [u8; 128] = [0; 128];
     var length: u64 = 0;
     while true {
         let input: i64 = vostok_console_getc();
-        if input >= 0 {
-            let character: u64 = input as u64;
-            if character == 13 || character == 10 {
-                newline();
-                if length == 4 && hash == 235548985 {
-                    help();
-                } else if length == 2 && hash == 14787 {
-                    vostok_process_dump();
-                } else if length == 5 && hash == 30856916622 {
-                    hello();
-                } else if length == 7 && hash == 554807481269579 {
-                    vostok_metrics_dump();
-                } else if length == 8 && hash == 76667356674608162 {
-                    vostok_console_stop();
-                    return 0;
-                } else if length != 0 {
-                    unknown();
-                }
-                hash = 0;
-                length = 0;
-                prompt();
-            } else if character >= 32 && character <= 126 {
-                put(character);
-                hash = hash * 131 + character;
-                length = length + 1;
+        if input == 13 || input == 10 {
+            newline();
+            if equal(&command[0], length, "help", 4) {
+                help();
+            } else if equal(&command[0], length, "ps", 2) {
+                vostok_process_dump();
+            } else if equal(&command[0], length, "hello", 5) {
+                puts("Hello from Iskra userspace.\n");
+            } else if equal(&command[0], length, "metrics", 7) {
+                vostok_metrics_dump();
+            } else if equal(&command[0], length, "ls", 2) {
+                list_files(filesystem);
+            } else if prefix(&command[0], length, "cat ", 4) {
+                cat_file(filesystem, &command[4], length - 4);
+            } else if prefix(&command[0], length, "edit ", 5) {
+                edit_file(filesystem, &command[5], length - 5);
+            } else if prefix(&command[0], length, "build ", 6) {
+                build_program(process, &command[6], length - 6);
+            } else if prefix(&command[0], length, "run ", 4) {
+                run_program(process, &command[4], length - 4);
+            } else if equal(&command[0], length, "shutdown", 8) {
+                vostok_console_stop();
+                return 0;
+            } else if length != 0 {
+                puts("unknown command\n");
             }
+            length = 0;
+            prompt();
+        } else if (input == 8 || input == 127) && length > 0 {
+            length = length - 1;
+            put(8); put(32); put(8);
+        } else if input >= 32 && input <= 126 && length < 127 {
+            command[length] = input as u8;
+            length = length + 1;
+            put(input as u64);
         }
     }
     return 1;

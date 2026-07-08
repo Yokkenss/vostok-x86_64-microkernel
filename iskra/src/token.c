@@ -7,10 +7,10 @@
 const char *token_kind_name(enum token_kind kind)
 {
     static const char *const names[] = {
-        "eof", "identifier", "integer", "as", "bool", "const", "else",
+        "eof", "identifier", "integer", "string", "as", "bool", "const", "else",
         "extern", "false", "fn", "if", "let", "mut", "null", "pub",
         "return", "struct", "true", "var", "while", "void", "(", ")",
-        "{", "}", ":", ";", ",", ".", "->", "+", "-", "*", "/",
+        "{", "}", "[", "]", ":", ";", ",", ".", "->", "+", "-", "*", "/",
         "%", "!", "~", "&", "|", "^", "=", "==", "!=", "<", "<=",
         ">", ">=", "<<", ">>", "&&", "||",
     };

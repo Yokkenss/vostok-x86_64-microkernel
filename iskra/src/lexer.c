@@ -134,6 +134,39 @@ static bool scan_integer(struct lexer *lexer, size_t start,
     return append_token(lexer, TOKEN_INTEGER, start, line, column);
 }
 
+static bool scan_string(struct lexer *lexer, size_t start,
+                        size_t line, size_t column)
+{
+    advance(lexer); /* opening quote */
+    while (!at_end(lexer) && peek(lexer, 0) != '"') {
+        if (peek(lexer, 0) == '\n' || peek(lexer, 0) == '\r') {
+            diagnostic_error(lexer->source, start, lexer->offset - start,
+                             line, column, "lex",
+                             "newline in string literal");
+            return false;
+        }
+        if (peek(lexer, 0) == '\\') {
+            advance(lexer);
+            const char escaped = peek(lexer, 0);
+            if (escaped != 'n' && escaped != 'r' && escaped != 't'
+                && escaped != '0' && escaped != '\\' && escaped != '"') {
+                diagnostic_error(lexer->source, lexer->offset, 1,
+                                 lexer->line, lexer->column, "lex",
+                                 "unknown string escape");
+                return false;
+            }
+        }
+        advance(lexer);
+    }
+    if (at_end(lexer)) {
+        diagnostic_error(lexer->source, start, lexer->offset - start,
+                         line, column, "lex", "unterminated string literal");
+        return false;
+    }
+    advance(lexer); /* closing quote */
+    return append_token(lexer, TOKEN_STRING, start, line, column);
+}
+
 static bool skip_block_comment(struct lexer *lexer, size_t start,
                                size_t line, size_t column)
 {
@@ -161,6 +194,8 @@ static bool scan_operator(struct lexer *lexer, size_t start,
     case ')': kind = TOKEN_RIGHT_PAREN; break;
     case '{': kind = TOKEN_LEFT_BRACE; break;
     case '}': kind = TOKEN_RIGHT_BRACE; break;
+    case '[': kind = TOKEN_LEFT_BRACKET; break;
+    case ']': kind = TOKEN_RIGHT_BRACKET; break;
     case ':': kind = TOKEN_COLON; break;
     case ';': kind = TOKEN_SEMICOLON; break;
     case ',': kind = TOKEN_COMMA; break;
@@ -246,6 +281,10 @@ bool lexer_scan(const struct source *source, struct token_list *tokens)
             if (!scan_integer(&lexer, start, line, column)) {
                 return false;
             }
+            continue;
+        }
+        if (character == '"') {
+            if (!scan_string(&lexer, start, line, column)) return false;
             continue;
         }
 

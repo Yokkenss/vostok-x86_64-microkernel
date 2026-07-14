@@ -6,10 +6,11 @@ static const char *ast_kind_name(enum ast_kind kind)
 {
     static const char *const names[] = {
         "program", "const", "struct", "field", "fn", "parameters",
-        "parameter", "type", "pointer-type", "block", "let", "var",
+        "parameter", "type", "pointer-type", "array-type", "block", "let", "var",
         "assign", "return", "if", "while", "expression-statement", "call",
-        "field-access", "struct-literal", "field-initializer", "name",
-        "integer", "boolean", "null", "unary", "cast", "binary",
+        "field-access", "index", "array-literal", "struct-literal",
+        "field-initializer", "name", "integer", "string", "boolean",
+        "null", "unary", "cast", "binary",
     };
     return names[kind];
 }
@@ -23,13 +24,16 @@ static bool prints_token(enum ast_kind kind)
     case AST_FUNCTION_DECL:
     case AST_PARAMETER:
     case AST_TYPE_NAME:
+    case AST_TYPE_ARRAY:
     case AST_LET_DECL:
     case AST_VAR_DECL:
     case AST_FIELD_ACCESS:
+    case AST_INDEX:
     case AST_STRUCT_LITERAL:
     case AST_FIELD_INITIALIZER:
     case AST_NAME:
     case AST_INTEGER:
+    case AST_STRING:
     case AST_BOOLEAN:
     case AST_UNARY:
     case AST_BINARY:

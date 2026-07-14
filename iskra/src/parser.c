@@ -95,6 +95,26 @@ static bool is_type_name(enum token_kind kind)
 
 static struct ast_node *parse_type(struct parser *parser)
 {
+    if (match(parser, TOKEN_LEFT_BRACKET)) {
+        const struct token bracket = *previous(parser);
+        struct ast_node *node = make_node(parser, AST_TYPE_ARRAY, bracket);
+        if (node == NULL || !add_child(parser, node, parse_type(parser))
+            || !expect(parser, TOKEN_SEMICOLON,
+                       "expected ';' before array length")
+            || !expect(parser, TOKEN_INTEGER, "expected array length")) {
+            ast_destroy(node);
+            return NULL;
+        }
+        struct ast_node *length = make_node(parser, AST_INTEGER,
+                                            *previous(parser));
+        if (length == NULL || !add_child(parser, node, length)
+            || !expect(parser, TOKEN_RIGHT_BRACKET,
+                       "expected ']' after array type")) {
+            ast_destroy(node);
+            return NULL;
+        }
+        return node;
+    }
     if (match(parser, TOKEN_STAR)) {
         const struct token star = *previous(parser);
         struct ast_node *node = make_node(parser, AST_TYPE_POINTER, star);
@@ -172,6 +192,9 @@ static struct ast_node *parse_primary(struct parser *parser)
     if (match(parser, TOKEN_INTEGER)) {
         return make_node(parser, AST_INTEGER, token);
     }
+    if (match(parser, TOKEN_STRING)) {
+        return make_node(parser, AST_STRING, token);
+    }
     if (match(parser, TOKEN_KW_TRUE) || match(parser, TOKEN_KW_FALSE)) {
         return make_node(parser, AST_BOOLEAN, token);
     }
@@ -186,6 +209,33 @@ static struct ast_node *parse_primary(struct parser *parser)
     } else if (match(parser, TOKEN_LEFT_PAREN)) {
         node = parse_expression(parser, 1);
         if (!expect(parser, TOKEN_RIGHT_PAREN, "expected ')' after expression")) {
+            ast_destroy(node);
+            return NULL;
+        }
+    } else if (match(parser, TOKEN_LEFT_BRACKET)) {
+        node = make_node(parser, AST_ARRAY_LITERAL, token);
+        if (node == NULL || !add_child(parser, node, parse_expression(parser, 1))) {
+            ast_destroy(node);
+            return NULL;
+        }
+        if (match(parser, TOKEN_SEMICOLON)) {
+            if (!expect(parser, TOKEN_INTEGER, "expected repetition count")
+                || !add_child(parser, node,
+                              make_node(parser, AST_INTEGER, *previous(parser)))) {
+                ast_destroy(node);
+                return NULL;
+            }
+        } else {
+            while (match(parser, TOKEN_COMMA)
+                   && !check(parser, TOKEN_RIGHT_BRACKET)) {
+                if (!add_child(parser, node, parse_expression(parser, 1))) {
+                    ast_destroy(node);
+                    return NULL;
+                }
+            }
+        }
+        if (!expect(parser, TOKEN_RIGHT_BRACKET,
+                    "expected ']' after array literal")) {
             ast_destroy(node);
             return NULL;
         }
@@ -229,6 +279,17 @@ static struct ast_node *parse_primary(struct parser *parser)
                 return NULL;
             }
             node = field;
+        } else if (match(parser, TOKEN_LEFT_BRACKET)) {
+            struct ast_node *index = make_node(parser, AST_INDEX,
+                                               *previous(parser));
+            if (index == NULL || !add_child(parser, index, node)
+                || !add_child(parser, index, parse_expression(parser, 1))
+                || !expect(parser, TOKEN_RIGHT_BRACKET,
+                           "expected ']' after index")) {
+                ast_destroy(index);
+                return NULL;
+            }
+            node = index;
         } else {
             break;
         }

@@ -51,6 +51,7 @@ static enum hir_type_kind type_from_ast(const struct lowerer *lowerer,
                                         const struct ast_node *node)
 {
     if (node->kind == AST_TYPE_POINTER) return HIR_TYPE_POINTER;
+    if (node->kind == AST_TYPE_ARRAY) return HIR_TYPE_ARRAY;
     static const struct {
         const char *name;
         enum hir_type_kind type;
@@ -159,6 +160,7 @@ static enum hir_type_kind lower_expression(struct lowerer *lowerer,
     uint32_t binding_id = 0;
     switch (node->kind) {
     case AST_INTEGER: type = HIR_TYPE_LITERAL; break;
+    case AST_STRING: type = HIR_TYPE_STRING; break;
     case AST_BOOLEAN: type = HIR_TYPE_BOOL; break;
     case AST_NULL: type = HIR_TYPE_NULL; break;
     case AST_STRUCT_LITERAL:
@@ -185,6 +187,25 @@ static enum hir_type_kind lower_expression(struct lowerer *lowerer,
                     }
                 }
             }
+        }
+        break;
+    case AST_ARRAY_LITERAL:
+        for (size_t index = 0; index < node->child_count; ++index)
+            (void)lower_expression(lowerer, node->children[index]);
+        type = HIR_TYPE_ARRAY;
+        break;
+    case AST_INDEX:
+        (void)lower_expression(lowerer, node->children[0]);
+        (void)lower_expression(lowerer, node->children[1]);
+        if (node->children[0]->kind == AST_NAME) {
+            const struct local_symbol *local = find_local(
+                lowerer, node->children[0]->token);
+            if (local != NULL && local->type_node->kind == AST_TYPE_ARRAY)
+                type = type_from_ast(lowerer,
+                                     local->type_node->children[0]);
+            if (local != NULL && local->type_node->kind == AST_TYPE_POINTER)
+                type = type_from_ast(lowerer,
+                                     local->type_node->children[0]);
         }
         break;
     case AST_NAME: {
@@ -411,7 +432,7 @@ const char *hir_type_name(enum hir_type_kind type)
     static const char *const names[] = {
         "error", "void", "bool", "u8", "u16", "u32", "u64",
         "i8", "i16", "i32", "i64", "usize", "isize", "literal",
-        "struct", "pointer", "null",
+        "struct", "pointer", "array", "string", "null",
     };
     return names[type];
 }

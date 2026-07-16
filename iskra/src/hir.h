@@ -26,6 +26,8 @@ enum hir_type_kind {
     HIR_TYPE_LITERAL,
     HIR_TYPE_STRUCT,
     HIR_TYPE_POINTER,
+    HIR_TYPE_ARRAY,
+    HIR_TYPE_STRING,
     HIR_TYPE_NULL,
 };
 

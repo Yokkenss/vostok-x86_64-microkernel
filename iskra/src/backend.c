@@ -30,6 +30,8 @@ enum value_type {
     VALUE_LITERAL,
     VALUE_STRUCT,
     VALUE_POINTER,
+    VALUE_ARRAY,
+    VALUE_STRING,
     VALUE_NULL,
 };
 
@@ -103,6 +105,7 @@ static enum value_type parse_type(const struct emitter *emitter,
                                   const struct ast_node *node)
 {
     if (node->kind == AST_TYPE_POINTER) return VALUE_POINTER;
+    if (node->kind == AST_TYPE_ARRAY) return VALUE_ARRAY;
     static const struct {
         const char *name;
         enum value_type type;
@@ -239,6 +242,10 @@ static size_t type_alignment(const struct emitter *emitter,
                              enum value_type type,
                              const struct ast_node *type_node)
 {
+    if (type == VALUE_ARRAY)
+        return type_alignment(emitter, parse_type(emitter,
+                              type_node->children[0]),
+                              type_node->children[0]);
     if (type != VALUE_STRUCT) return scalar_size(type);
     const struct ast_node *structure = type_node->kind == AST_STRUCT_DECL
         ? type_node : find_structure(emitter, type_node->token);
@@ -256,6 +263,16 @@ static size_t type_alignment(const struct emitter *emitter,
 static size_t type_size(const struct emitter *emitter, enum value_type type,
                         const struct ast_node *type_node)
 {
+    if (type == VALUE_ARRAY) {
+        bool valid = false;
+        const uint64_t count = parse_integer(emitter,
+                                             type_node->children[1]->token,
+                                             &valid);
+        if (!valid || count == 0 || count > 4096) return 0;
+        const struct ast_node *element = type_node->children[0];
+        return (size_t)count * type_size(emitter, parse_type(emitter, element),
+                                         element);
+    }
     if (type != VALUE_STRUCT) return scalar_size(type);
     const struct ast_node *structure = type_node->kind == AST_STRUCT_DECL
         ? type_node : find_structure(emitter, type_node->token);
@@ -293,6 +310,7 @@ static size_t storage_size(const struct emitter *emitter,
                            enum value_type type,
                            const struct ast_node *type_node)
 {
+    if (type == VALUE_ARRAY) return type_size(emitter, type, type_node);
     if (type != VALUE_STRUCT) return 8;
     const struct ast_node *structure = type_node->kind == AST_STRUCT_DECL
                                      ? type_node
@@ -332,15 +350,29 @@ static enum value_type expression_type(const struct emitter *emitter,
             VALUE_VOID, VALUE_VOID, VALUE_BOOL, VALUE_U8, VALUE_U16,
             VALUE_U32, VALUE_U64, VALUE_I8, VALUE_I16, VALUE_I32,
             VALUE_I64, VALUE_USIZE, VALUE_ISIZE, VALUE_LITERAL,
-            VALUE_STRUCT, VALUE_POINTER, VALUE_NULL,
+            VALUE_STRUCT, VALUE_POINTER, VALUE_ARRAY, VALUE_STRING,
+            VALUE_NULL,
         };
         return mapping[hir_type];
     }
     switch (node->kind) {
     case AST_INTEGER: return VALUE_LITERAL;
+    case AST_STRING: return VALUE_STRING;
     case AST_BOOLEAN: return VALUE_BOOL;
     case AST_NULL: return VALUE_NULL;
     case AST_STRUCT_LITERAL: return VALUE_STRUCT;
+    case AST_ARRAY_LITERAL: return VALUE_ARRAY;
+    case AST_INDEX: {
+        const struct ast_node *base = node->children[0];
+        if (base->kind == AST_NAME) {
+            const struct local_slot *slot = find_active(emitter, base->token);
+            if (slot != NULL && slot->type_node->kind == AST_TYPE_ARRAY)
+                return parse_type(emitter, slot->type_node->children[0]);
+            if (slot != NULL && slot->type_node->kind == AST_TYPE_POINTER)
+                return parse_type(emitter, slot->type_node->children[0]);
+        }
+        return VALUE_VOID;
+    }
     case AST_FIELD_ACCESS: {
         const struct ast_node *base = node->children[0];
         const struct ast_node *structure = NULL;
@@ -471,6 +503,38 @@ static void emit_address(struct emitter *emitter, const struct ast_node *node)
         emit_address(emitter, node->children[0]);
         if (offset != 0)
             fprintf(emitter->output, "    addq $%zu, %%rax\n", offset);
+        return;
+    }
+    if (node->kind == AST_INDEX && node->children[0]->kind == AST_NAME) {
+        const struct local_slot *slot = find_active(
+            emitter, node->children[0]->token);
+        if (slot == NULL || (slot->type_node->kind != AST_TYPE_ARRAY
+                             && slot->type_node->kind != AST_TYPE_POINTER)) {
+            emit_error(emitter, node->token, "index base is not an array");
+            return;
+        }
+        bool valid = slot->type_node->kind == AST_TYPE_POINTER;
+        uint64_t count = UINT64_MAX;
+        if (slot->type_node->kind == AST_TYPE_ARRAY)
+            count = parse_integer(emitter,
+                slot->type_node->children[1]->token, &valid);
+        const struct ast_node *element = slot->type_node->children[0];
+        const size_t element_size = type_size(
+            emitter, parse_type(emitter, element), element);
+        emit_expression(emitter, node->children[1]);
+        const unsigned int in_bounds = new_label(emitter);
+        fprintf(emitter->output,
+                "    cmpq $%llu, %%rax\n    jb .L%u\n    ud2\n.L%u:\n",
+                (unsigned long long)(valid ? count : 0), in_bounds,
+                in_bounds);
+        if (element_size != 1)
+            fprintf(emitter->output, "    imulq $%zu, %%rax\n", element_size);
+        if (slot->type_node->kind == AST_TYPE_ARRAY)
+            fprintf(emitter->output,
+                    "    leaq -%zu(%%rbp,%%rax), %%rax\n", slot->offset);
+        else
+            fprintf(emitter->output,
+                    "    addq -%zu(%%rbp), %%rax\n", slot->offset);
         return;
     }
     emit_error(emitter, node->token, "expression is not addressable");
@@ -651,6 +715,10 @@ static void emit_expression(struct emitter *emitter,
                 (unsigned long long)value);
         break;
     }
+    case AST_STRING:
+        fprintf(emitter->output, "    leaq .Lstring%zu(%%rip), %%rax\n",
+                node->token.offset);
+        break;
     case AST_BOOLEAN:
         fprintf(emitter->output, "    movq $%u, %%rax\n",
                 token_has_text(emitter->source, node->token, "true") ? 1u : 0u);
@@ -662,6 +730,14 @@ static void emit_expression(struct emitter *emitter,
         emit_error(emitter, node->token,
                    "structure literal requires a destination");
         break;
+    case AST_ARRAY_LITERAL:
+        emit_error(emitter, node->token,
+                   "array literal requires a destination");
+        break;
+    case AST_INDEX:
+        emit_address(emitter, node);
+        emit_load_at_rax(emitter, expression_type(emitter, node));
+        break;
     case AST_FIELD_ACCESS:
         emit_address(emitter, node);
         emit_load_at_rax(emitter, expression_type(emitter, node));
@@ -669,8 +745,12 @@ static void emit_expression(struct emitter *emitter,
     case AST_NAME: {
         const struct local_slot *local = find_active(emitter, node->token);
         if (local != NULL) {
-            fprintf(emitter->output, "    movq -%zu(%%rbp), %%rax\n",
-                    local->offset);
+            if (local->type == VALUE_ARRAY)
+                fprintf(emitter->output, "    leaq -%zu(%%rbp), %%rax\n",
+                        local->offset);
+            else
+                fprintf(emitter->output, "    movq -%zu(%%rbp), %%rax\n",
+                        local->offset);
         } else {
             const struct backend_constant *constant =
                 find_constant(emitter, node->token);
@@ -723,7 +803,36 @@ static void emit_statement(struct emitter *emitter,
         const bool explicit_type = statement->child_count == 2;
         const struct ast_node *initializer =
             statement->children[explicit_type ? 1 : 0];
-        if (slot->type == VALUE_STRUCT
+        if (slot->type == VALUE_ARRAY
+            && initializer->kind == AST_ARRAY_LITERAL) {
+            bool valid = false;
+            const uint64_t count = parse_integer(
+                emitter, slot->type_node->children[1]->token, &valid);
+            const struct ast_node *element = slot->type_node->children[0];
+            const enum value_type element_type = parse_type(emitter, element);
+            const size_t element_size = type_size(emitter, element_type,
+                                                  element);
+            if (!valid || initializer->child_count != 2) {
+                emit_error(emitter, initializer->token,
+                           "array initializer must use [value; count]");
+            } else {
+                emit_expression(emitter, initializer->children[0]);
+                fprintf(emitter->output,
+                        "    leaq -%zu(%%rbp), %%rdi\n"
+                        "    movq $%llu, %%rcx\n    cld\n",
+                        slot->offset, (unsigned long long)count);
+                switch (element_size) {
+                case 1: fprintf(emitter->output, "    rep stosb\n"); break;
+                case 2: fprintf(emitter->output, "    rep stosw\n"); break;
+                case 4: fprintf(emitter->output, "    rep stosl\n"); break;
+                case 8: fprintf(emitter->output, "    rep stosq\n"); break;
+                default:
+                    emit_error(emitter, initializer->token,
+                               "array element cannot be repeated by backend");
+                    break;
+                }
+            }
+        } else if (slot->type == VALUE_STRUCT
             && initializer->kind == AST_STRUCT_LITERAL) {
             const struct ast_node *structure = find_structure(
                 emitter, initializer->token);
@@ -961,6 +1070,36 @@ static void collect_globals(struct emitter *emitter,
     }
 }
 
+static void emit_string_literals(struct emitter *emitter,
+                                 const struct ast_node *node)
+{
+    if (node->kind == AST_STRING) {
+        fprintf(emitter->output, ".Lstring%zu:\n    .byte ",
+                node->token.offset);
+        bool first = true;
+        const size_t begin = node->token.offset + 1;
+        const size_t end = node->token.offset + node->token.length - 1;
+        for (size_t offset = begin; offset < end; ++offset) {
+            unsigned int value = (unsigned char)emitter->source->text[offset];
+            if (value == '\\' && offset + 1 < end) {
+                const char escaped = emitter->source->text[++offset];
+                switch (escaped) {
+                case 'n': value = '\n'; break;
+                case 'r': value = '\r'; break;
+                case 't': value = '\t'; break;
+                case '0': value = 0; break;
+                default: value = (unsigned char)escaped; break;
+                }
+            }
+            fprintf(emitter->output, "%s%u", first ? "" : ", ", value);
+            first = false;
+        }
+        fprintf(emitter->output, "%s0\n", first ? "" : ", ");
+    }
+    for (size_t index = 0; index < node->child_count; ++index)
+        emit_string_literals(emitter, node->children[index]);
+}
+
 bool backend_emit_x86_64(FILE *output, const struct source *source,
                          const struct ast_node *program,
                          const struct hir_program *hir)
@@ -975,6 +1114,8 @@ bool backend_emit_x86_64(FILE *output, const struct source *source,
             emit_function(&emitter, program->children[index]);
         }
     }
+    fprintf(output, ".section .rodata\n");
+    emit_string_literals(&emitter, program);
     fprintf(output, ".section .note.GNU-stack,\"\",@progbits\n");
     return !emitter.failed && !ferror(output);
 }

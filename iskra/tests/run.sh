@@ -25,8 +25,10 @@ done
     >"$temporary/structures.S"
 "$compiler" --emit-asm tests/valid/structure_layout.isk \
     >"$temporary/structure_layout.S"
+"$compiler" --emit-asm tests/valid/strings_arrays.isk \
+    >"$temporary/strings_arrays.S"
 cc -c tests/host_start.S -o "$temporary/host_start.o"
-for program in backend_runtime control_flow structures structure_layout; do
+for program in backend_runtime control_flow structures structure_layout strings_arrays; do
     cc -c "$temporary/$program.S" -o "$temporary/$program.o"
     ld -static -e _start "$temporary/host_start.o" "$temporary/$program.o" \
         -o "$temporary/$program"
@@ -56,6 +58,14 @@ grep -F "tests/invalid/bad_character.isk:2:12: error[lex]" \
 if "$compiler" --check examples/invalid/immutable_assignment.isk \
     >"$temporary/output" 2>"$temporary/error"; then
     echo "immutable assignment unexpectedly type checked" >&2
+    exit 1
+fi
+grep -F "error[semantic]: cannot assign to an immutable binding" \
+    "$temporary/error" >/dev/null
+
+if "$compiler" --check tests/invalid/immutable_array.isk \
+    >"$temporary/output" 2>"$temporary/error"; then
+    echo "immutable array assignment unexpectedly type checked" >&2
     exit 1
 fi
 grep -F "error[semantic]: cannot assign to an immutable binding" \

@@ -1,0 +1,16 @@
+pub fn main() -> i32 {
+    let text: *const u8 = "Iskra\n";
+    if *text != 73 {
+        return 1;
+    }
+    var bytes: [u8; 4] = [0; 4];
+    bytes[0] = 73;
+    bytes[1] = 83;
+    bytes[2] = 75;
+    bytes[3] = 82;
+    if bytes[0] != 73 || bytes[1] != 83 || bytes[2] != 75
+        || bytes[3] != 82 {
+        return 2;
+    }
+    return 0;
+}

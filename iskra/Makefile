@@ -14,8 +14,10 @@ SOURCES := \
 	src/hir.c \
 	src/backend.c
 OBJECTS := $(SOURCES:src/%.c=$(BUILD)/%.o)
-CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Wpedantic -Werror
+CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Wpedantic -Werror -MMD -MP
 CPPFLAGS := -Isrc
+
+-include $(OBJECTS:.o=.d)
 
 .PHONY: all test clean
 

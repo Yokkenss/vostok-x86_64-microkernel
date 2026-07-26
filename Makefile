@@ -20,6 +20,7 @@ LIMINE_PROTOCOL_DIR := $(BUILD)/limine-protocol
 LIMINE_HEADER := $(LIMINE_PROTOCOL_DIR)/include/limine.h
 
 CFLAGS := -std=gnu11 -O2 -g -Wall -Wextra -Werror \
+	-MMD -MP \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-stack-check -fno-pic \
 	-fno-asynchronous-unwind-tables -fno-unwind-tables -m64 -march=x86-64 \
 	-mabi=sysv -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mcmodel=kernel
@@ -34,7 +35,10 @@ USER_LDFLAGS := -m elf_x86_64 -nostdlib -static -z max-page-size=0x1000 \
 USER_PROGRAMS := $(BUILD)/user/receiver.elf $(BUILD)/user/sender.elf \
 	$(BUILD)/user/auditor.elf $(BUILD)/user/faulty.elf \
 	$(BUILD)/user/spinner_a.elf $(BUILD)/user/spinner_b.elf \
-	$(BUILD)/user/console.elf $(BUILD)/user/shell.elf
+	$(BUILD)/user/console.elf $(BUILD)/user/shell.elf \
+	$(BUILD)/user/init.elf $(BUILD)/user/hello.elf \
+	$(BUILD)/user/iskra_vm.elf \
+	$(BUILD)/user/iskrac_native.elf
 ISKRA_COMPILER := iskra/build/iskrac
 
 COMMON_OBJECTS := \
@@ -50,6 +54,7 @@ COMMON_OBJECTS := \
 	$(BUILD)/kernel/capability.o \
 	$(BUILD)/kernel/elf.o \
 	$(BUILD)/kernel/ipc.o \
+	$(BUILD)/kernel/ramfs.o \
 	$(BUILD)/kernel/process.o \
 	$(BUILD)/kernel/scheduler.o \
 	$(BUILD)/x86/gdt.o \
@@ -67,6 +72,8 @@ EXCEPTION_TEST_KERNEL := $(BUILD)/vostok-exception-test.elf
 EXCEPTION_TEST_IMAGE := $(BUILD)/vostok-exception-test.iso
 EXCEPTION_ISO_ROOT := $(BUILD)/exception_iso_root
 HOST_PMM_TEST := $(BUILD)/tests/page_bitmap_test
+
+-include $(OBJECTS:.o=.d) $(EXCEPTION_TEST_OBJECTS:.o=.d)
 
 .PHONY: all run test metrics clean distclean
 
@@ -171,15 +178,20 @@ run: $(IMAGE)
 
 test: $(IMAGE) $(EXCEPTION_TEST_IMAGE) $(HOST_PMM_TEST)
 	$(HOST_PMM_TEST)
-	QEMU_INPUT='help\rps\rhello\rmetrics\rshutdown\r' \
+	QEMU_INPUT_BASE64='aGVscFxycHNccmhlbGxvXHJsc1xyY2F0IC9ob21lL21haW4uaXNrXHJydW4gaGVsbG9ccmVkaXQgL2hvbWUvdGVzdC5pc2tccmZuIG1haW4oKSAtPiBpMzIgeyBwcmludCgiTmF0aXZlIElza3JhIGZyb20gVm9zdG9rIVxcbiIpOyByZXR1cm4gMDsgfVxyXDAwNGJ1aWxkIC9ob21lL3Rlc3QuaXNrXHJydW4gL2hvbWUvYS5vdXRccm1ldHJpY3NccnNodXRkb3duXHI=' \
+	QEMU_TIMEOUT=12 \
 	sh scripts/qemu-smoke.sh $(IMAGE) "physical allocator:" \
 		"address-space test passed" "capability check rejected receive" \
 		"capability check rejected console write" \
 		"IPC main: sender -> receiver, word=42" \
 		"IPC audit: receiver -> auditor, word=99" \
-		"terminated by exception 6" "Vostok 0.2" \
+		"terminated by exception 6" "Vostok 0.3" \
 		"Hello from Iskra userspace." "PID  NAME" "preemptions" \
-		"UART metrics:" \
+		"UART metrics:" "/home/main.isk" "saved" \
+		"Hello from dynamically loaded ELF." "Native Iskra from Vostok!" \
+		"native x86-64 ELF written to /home/a.out" \
+		"entry=0x0000000000400078" \
+		"run: finished successfully" \
 		"all user processes completed successfully"
 	sh scripts/qemu-smoke.sh $(EXCEPTION_TEST_IMAGE) \
 		"exception: page fault (#PF)" "cr2: 0x00000deadbeef000"

@@ -31,6 +31,7 @@ static const char *state_name(enum process_state state)
     case PROCESS_BLOCKED_SEND: return "send-wait";
     case PROCESS_BLOCKED_RECEIVE: return "recv-wait";
     case PROCESS_BLOCKED_CONSOLE: return "console-wait";
+    case PROCESS_BLOCKED_WAIT: return "process-wait";
     case PROCESS_DEAD: return "dead";
     }
     return "invalid";
@@ -120,6 +121,7 @@ static void finish_demo(struct process *previous)
     bool success = true;
     for (size_t index = 0; index < PROCESS_LIMIT; ++index) {
         struct process *process = &processes[index];
+        if (process->state == PROCESS_UNUSED) continue;
         if (process != previous
             && process->address_space.root != INVALID_PHYSICAL_ADDRESS) {
             process_cleanup(process);
@@ -207,6 +209,7 @@ struct exception_frame *process_handle_fault(struct exception_frame *frame,
     current_process->exit_code = 128 + (int)frame->vector;
     current_process->faulted = true;
     current_process->state = PROCESS_DEAD;
+    process_wake_waiters(current_process->pid, current_process->exit_code);
     log_warn("process %s pid=%u terminated by exception %lu at 0x%lx",
              current_process->name, current_process->pid,
              (unsigned long)frame->vector, (unsigned long)fault_address);

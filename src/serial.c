@@ -19,7 +19,9 @@ enum {
 
 static const uint64_t IOAPIC_VIRTUAL = 0xffffffff90001000ULL;
 static volatile uint32_t *ioapic;
-static uint8_t receive_buffer[64];
+/* Large enough for automated paste/edit scenarios; IRQ handling remains
+   bounded by the UART FIFO, while consumers drain this software queue. */
+static uint8_t receive_buffer[1024];
 static unsigned int receive_read;
 static unsigned int receive_write;
 static unsigned long interrupt_count;

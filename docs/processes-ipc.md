@@ -37,18 +37,21 @@ handle to a console syscall is rejected as an object-type error.
 
 ## Demonstration
 
-The boot image contains eight independent user ELF files generated from the
-Iskra sources in `user/`. Three exercise IPC, one deliberately faults, two are
-CPU-bound preemption workloads, and one is the interactive serial shell:
+The boot image contains Iskra-generated user ELF modules. Six processes form
+the boot regression workload; userspace `init` then starts the console and
+interactive shell. Additional modules are created dynamically by `run`:
 
 1. `sender` proves that its send-only handle cannot receive, then blocks while
    sending `42` and a send-only derivative of a transferable audit capability.
 2. `auditor` waits on the audit endpoint.
 3. `receiver` accepts the queued first message, then uses the received
    capability to deliver `99` directly to the waiting `auditor`.
-4. `console` owns the UART device capability and serves an IPC endpoint.
-5. `shell` waits for the background demonstration and accepts `help`, `ps`,
-   `hello`, `metrics`, and `shutdown`; all character I/O crosses that endpoint.
+4. `init` creates the initial ramfs source and starts system services.
+5. `console` owns the UART device capability and serves an IPC endpoint.
+6. `shell` provides file, editor, dynamic process and diagnostic commands; all
+   character I/O crosses that endpoint.
+7. `hello` and `iskra_vm` are not boot processes; `run` allocates a PID and
+   isolated address space for them, then the shell waits for their exit.
 
 This ordering exercises both sides of the rendezvous implementation: a sender
 waiting for a later receiver and a sender finding a receiver already blocked.
@@ -67,7 +70,8 @@ returns zero. A negative kernel error is returned without modifying `out`.
 
 ## Current limits
 
-There is no SMP, dynamic process creation, demand paging, endpoint
-queue, revocation tree, or fault recovery policy yet. Endpoint objects are
+There is no SMP, demand paging, endpoint queue, revocation tree, or service
+restart policy yet. Process creation loads bootfs ELF modules but does not yet
+support dynamic linking. Endpoint objects are
 kernel-owned bootstrap objects. These omissions keep the current object and
 lifetime rules explicit enough to test before they are generalized.

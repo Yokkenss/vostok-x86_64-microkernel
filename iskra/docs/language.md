@@ -53,14 +53,18 @@ Draft 0.1 supports:
 true
 false
 null
+"text\\n"
+[0; 64]
 ```
 
 Decimal, hexadecimal, and binary integer literals are initially untyped. Their
 value must fit the type required by context. With no expected type, an integer
 literal defaults to `i64`.
 
-`null` requires a pointer type from context. Character, string, byte-string,
-array, and floating-point literals are postponed.
+`null` requires a pointer type from context. A string literal is immutable,
+zero-terminated UTF-8 storage and has compatibility with `*const u8`. Escapes
+`\\n`, `\\r`, `\\t`, `\\0`, `\\`, and `\"` are supported. A repeated array
+literal `[value; count]` initializes every element of a fixed array.
 
 ## 4. Variables and mutation
 
@@ -138,7 +142,7 @@ Operators, from highest to lowest precedence:
 
 | Group | Operators |
 |---|---|
-| postfix | function call `()`, field access `.` |
+| postfix | function call `()`, field access `.`, indexing `[]` |
 | unary | `-`, `!`, `~`, `*`, `&`, `&mut` |
 | multiplicative | `*`, `/`, `%` |
 | additive | `+`, `-` |
@@ -180,13 +184,28 @@ Pointer types are explicit:
 - dereferencing `null`, an invalid address, or a misaligned address traps at
   runtime when hardware detects it; draft 0.1 provides no pointer validity proof.
 
-Pointer arithmetic is deliberately absent. Memory buffers will initially be
-accessed through runtime functions until slice and array semantics are designed.
+Pointer arithmetic is deliberately absent. Pointer indexing is supported and
+scales by the pointee size; bounds cannot be checked for raw pointers.
 
 Iskra pointers are not Rust references: draft 0.1 has no ownership, lifetime,
 or alias analysis.
 
-## 9. Structures
+## 9. Fixed arrays
+
+Fixed arrays use `[T; N]` and live inline in local storage:
+
+```text
+var bytes: [u8; 64] = [0; 64];
+bytes[0] = 86;
+let first: u8 = bytes[0];
+```
+
+The current backend emits a runtime bounds trap for fixed-array indexing.
+Array length is compile-time constant and limited to 4096 elements. Arrays are
+not passed or returned by value; pass `&array[0]` instead. Slices and dynamic
+arrays are not implemented.
+
+## 10. Structures
 
 ```text
 struct Point {
@@ -206,7 +225,7 @@ pointers. They cannot yet be passed or returned by value; functions pass a
 pointer instead. Unions, packed structures, bit fields, anonymous fields, and
 generic structures are postponed.
 
-## 10. Names and visibility
+## 11. Names and visibility
 
 Top-level names share one namespace. Duplicate declarations are errors except
 for one compatible `extern fn` declaration followed by its definition.
@@ -218,7 +237,7 @@ functions is defined in the ABI document.
 Shadowing a local name in an inner block is allowed. Redeclaring a name in the
 same block is an error.
 
-## 11. Grammar outline
+## 12. Grammar outline
 
 This is the parser contract for the next milestone. `expression` follows the
 precedence table above.
@@ -235,6 +254,7 @@ function_decl := "pub"? "extern"? "fn" IDENT
 parameter_list := parameter ("," parameter)* ","?
 parameter     := IDENT ":" type
 type          := scalar_type | IDENT | "*" ("const" | "mut") type
+               | "[" type ";" INTEGER "]"
 scalar_type   := "u8" | "u16" | "u32" | "u64"
                | "i8" | "i16" | "i32" | "i64"
                | "usize" | "isize" | "bool" | "void"
@@ -246,7 +266,8 @@ assignment    := expression "=" expression ";"
 return_stmt   := "return" expression? ";"
 if_stmt       := "if" expression block ("else" (block | if_stmt))?
 while_stmt    := "while" expression block
-primary       := INTEGER | "true" | "false" | "null" | IDENT
+primary       := INTEGER | STRING | "true" | "false" | "null" | IDENT
+               | "[" expression ";" INTEGER "]"
                | struct_literal | "(" expression ")"
 struct_literal := IDENT "{" field_init ("," field_init)* ","? "}"
 field_init    := IDENT ":" expression
@@ -255,7 +276,7 @@ field_init    := IDENT ":" expression
 The parser may accept only syntactically valid assignment targets; otherwise
 the semantic pass must reject them.
 
-## 12. Required diagnostics
+## 13. Required diagnostics
 
 Every compiler error must include:
 
@@ -268,9 +289,9 @@ Every compiler error must include:
 The compiler must reject a compilation unit after errors. It must never emit an
 executable from an AST that failed name or type checking.
 
-## 13. Explicit exclusions
+## 14. Explicit exclusions
 
-Draft 0.1 does not include heap allocation, arrays, slices, strings, modules,
+Draft 0.1 does not include heap allocation, slices, modules,
 generics, interfaces, macros, inline assembly, concurrency, exceptions, object
 orientation, garbage collection, ownership checking, floating point, or a
 standard library. These require separate design decisions rather than accidental

@@ -1,6 +1,17 @@
-# Invalid examples
+# invalid iskra examples
 
-These files are required to fail compilation. They become compile-fail fixtures
-when the bootstrap type checker is implemented.
+the files in this directory must fail compilation
 
-- `immutable_assignment.isk`: assignment to a `let` binding.
+`immutable_assignment.isk` checks that the compiler rejects assignment to a `let` value
+
+the test also checks the error category and message
+
+---
+
+# неправильные примеры iskra
+
+файлы в этой директории не должны проходить компиляцию
+
+`immutable_assignment.isk` проверяет что компилятор запрещает присваивание в значение `let`
+
+тест также проверяет категорию и текст ошибки

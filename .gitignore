@@ -1,0 +1,19 @@
+# Build output
+/build/
+/iskra/build/
+
+# Editor state
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local logs and temporary files
+*.log
+*.tmp
